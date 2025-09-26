@@ -442,3 +442,57 @@ def setup_standard_yadm_dir(paths):
     std_yadm_data.join("repo.git").mksymlinkto(paths.repo, absolute=1)
     std_yadm_dir.join("encrypt").mksymlinkto(paths.encrypt, absolute=1)
     return std_yadm_dir, std_yadm_data
+
+@pytest.mark.usefixtures("ds1_copy")
+def test_alt_preserves_user_symlink_until_alt_tracked(runner, paths):
+    """yadm alt should preserve user-created symlinks when no alternate is tracked,
+    but replaces them once the alternate is added to the repository."""
+    yadm_dir, yadm_data = setup_standard_yadm_dir(paths)
+    # Create a user symlink (not managed by yadm)
+    user_target = paths.work.join("user_target")
+    user_target.write("user-data")
+    link_file = paths.work.join(utils.ALT_FILE1)
+    link_file.mksymlinkto(user_target)
+    assert link_file.islink()
+    # Create a yadm alt file, but do not add it yet
+    alt_file = yadm_dir.join("alt").join(f"{utils.ALT_FILE1}##default")
+    alt_file.write("alt-data", ensure=True)
+    # Run yadm alt (should not replace user symlink)
+    run = runner([paths.pgm, "-Y", yadm_dir, "--yadm-data", yadm_data, "alt"])
+    assert run.success
+    # The symlink should still point to user_target
+    assert link_file.islink()
+    assert os.path.realpath(str(link_file)) == str(user_target)
+    # Now add the alt file and run yadm alt again
+    run = runner([paths.pgm, "-Y", yadm_dir, "--yadm-data", yadm_data, "add", alt_file])
+    assert run.success
+    run = runner([paths.pgm, "-Y", yadm_dir, "--yadm-data", yadm_data, "alt"])
+    assert run.success
+    # Now the symlink should be replaced and point to the alt file
+    assert link_file.islink()
+    assert os.path.realpath(str(link_file)) == str(alt_file)
+
+
+@pytest.mark.usefixtures("ds1_copy")
+def test_alt_skips_correct_symlink_without_touching(runner, paths):
+    """yadm alt should skip already-correct symlinks without any filesystem operations (no remove/recreate)."""
+    yadm_dir, yadm_data = setup_standard_yadm_dir(paths)
+    # Create and add a yadm alt file
+    alt_file = yadm_dir.join("alt").join(f"{utils.ALT_FILE1}##default")
+    alt_file.write("alt-data", ensure=True)
+    run = runner([paths.pgm, "-Y", yadm_dir, "--yadm-data", yadm_data, "add", alt_file])
+    assert run.success
+    # Run yadm alt to create the symlink
+    run = runner([paths.pgm, "-Y", yadm_dir, "--yadm-data", yadm_data, "alt"])
+    assert run.success
+    link_file = paths.work.join(utils.ALT_FILE1)
+    assert link_file.islink()
+    assert os.path.realpath(str(link_file)) == str(alt_file)
+    # Get the symlink's mtime
+    mtime_before = link_file.lstat().mtime
+    # Run yadm alt again (should not touch the symlink)
+    run = runner([paths.pgm, "-Y", yadm_dir, "--yadm-data", yadm_data, "alt"])
+    assert run.success
+    mtime_after = link_file.lstat().mtime
+    # The mtime should not change
+    assert mtime_before == mtime_after

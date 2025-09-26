@@ -603,11 +603,6 @@ function alt() {
       target="$target$suffix"
     fi
 
-    # Remove target if it's a symlink pointing at source
-    if [ -L "$target" ] && [ "$target" -ef "$source" ]; then
-      rm -f "$target"
-    fi
-
     score_file "$source" "$target" "$conditions"
   done
 
@@ -705,7 +700,7 @@ function alt_linking() {
     local source="${alt_sources[$index]}"
     local template_processor="${alt_template_processors[$index]}"
 
-    if [ -L "$target" ]; then
+    if [ -L "$target" ] && ! [ "$target" -ef "$source" ]; then
       rm -f "$target"
     elif [ -d "$target" ]; then
       echo "Skipping alt $source as $target is a directory"
